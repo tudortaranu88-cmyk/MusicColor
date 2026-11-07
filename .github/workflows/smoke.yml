@@ -1,0 +1,80 @@
+name: Test pornire (emulator)
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: smoke-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+jobs:
+  smoke:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 17
+      - uses: gradle/actions/setup-gradle@v5
+
+      - name: Build APK x86_64 pentru emulator
+        run: |
+          npm install --no-audit --no-fund
+          npx expo install --fix
+          npx expo prebuild --platform android --no-install --clean
+          cd android && ./gradlew assembleRelease --no-daemon -PreactNativeArchitectures=x86_64
+          cp app/build/outputs/apk/release/app-release.apk ../app.apk
+
+      - name: Activare KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Pornire pe emulator
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 34
+          arch: x86_64
+          target: google_apis
+          disable-animations: true
+          emulator-options: -no-window -noaudio -gpu swiftshader_indirect -no-snapshot -no-boot-anim
+          script: ./scripts/smoke.sh
+
+      - name: Verificare că aplicația rulează
+        run: |
+          cat smoke/pid.txt
+          cat smoke/selftest.txt || true
+          if grep -q 'pid=$' smoke/pid.txt; then echo "::error::Aplicația s-a oprit"; head -40 smoke/crash.txt; exit 1; fi
+          if ! grep -q 'SELFTEST done' smoke/selftest.txt; then echo "::error::Autotestul de export nu s-a terminat"; exit 1; fi
+          if ! grep -q 'SELFTEST2 done' smoke/selftest.txt; then echo "::error::Autotestul Nivelului 2 nu s-a terminat"; exit 1; fi
+          if ! grep -q 'SELFTEST3 done' smoke/selftest.txt; then echo "::error::Autotestul Nivelului 3 nu s-a terminat"; exit 1; fi
+          if grep -q 'unregistered ActivityResultLauncher' smoke/logcat.txt; then echo "::error::Selectorul de imagini nu s-a deschis"; exit 1; fi
+          cat smoke/audioprobe.txt || true
+          if grep -q 'AUDIOPROBE done' smoke/audioprobe.txt && grep -qE 'peak=0\.0000' smoke/audioprobe.txt; then echo "::warning::Sonda audio nu a măsurat semnal pe emulator (emulatorul rulează cu)"; fi
+          if grep -q 'FAIL' smoke/selftest.txt; then echo "::error::$(grep FAIL smoke/selftest.txt | tr '\n' ' ')"; exit 1; fi
+
+      - name: Publicare rezultate pe ramura smoke-output
+        if: always()
+        run: |
+          set +e
+          out=$(mktemp -d)
+          cp -r smoke "$out/" 2>/dev/null
+          echo "run ${{ github.run_number }} · ${{ github.sha }} · ${{ job.status }}" > "$out/STATUS.txt"
+          cd "$out"
+          git init -q -b smoke-output
+          git config user.name "github-actions"
+          git config user.email "github-actions@users.noreply.github.com"
+          git add -A
+          git commit -qm "Smoke ${{ github.run_number }}"
+          git push -f "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" smoke-output

@@ -1,0 +1,42 @@
+{
+  "expo": {
+    "name": "MusicColor",
+    "slug": "musiccolor",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "dark",
+    "newArchEnabled": true,
+    "backgroundColor": "#0e0e12",
+    "android": {
+      "package": "com.tskyes.musiccolor",
+      "edgeToEdgeEnabled": true
+    },
+    "ios": {
+      "bundleIdentifier": "com.tskyes.musiccolor"
+    },
+    "scheme": "musiccolor",
+    "plugins": [
+      [
+        "expo-media-library",
+        {
+          "photosPermission": "MusicColor salvează imaginile create în galerie.",
+          "savePhotosPermission": "MusicColor salvează imaginile create în galerie.",
+          "isAccessMediaLocationEnabled": false,
+          "granularPermissions": [
+            "photo",
+            "audio"
+          ]
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "MusicColor citește imaginea aleasă pentru a crea melodia.",
+          "cameraPermission": false,
+          "microphonePermission": false
+        }
+      ],
+      "./plugins/withConfigChanges"
+    ]
+  }
+}
